@@ -1,0 +1,16 @@
+{
+  "_note": "Twitch uses login names, Kick uses channel slugs (the part after kick.com/), YouTube needs channel IDs starting with UC. Verify each name; some may be wrong or have changed.",
+  "twitch": [
+    "xqc", "kaicenat", "summit1g", "buddha", "lirik", "sodapoppin",
+    "mizkif", "ludwig", "timthetatman", "ramee",
+    "ibai", "auronplay", "thegrefg", "elxokas", "spreen", "coscu",
+    "elmariana", "knekro", "perxitaa", "elrichmc"
+  ],
+  "kick": [
+    "adinross", "xqc", "trainwreck", "n3on", "amouranth", "sneako",
+    "sketch", "yourrage", "mizkif", "westcol", "spreen"
+  ],
+  "youtube": [
+    {"name": "EXAMPLE - replace me", "id": "UCxxxxxxxxxxxxxxxxxxxxxx"}
+  ]
+}
