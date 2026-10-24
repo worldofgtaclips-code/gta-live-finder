@@ -1,142 +1,40 @@
-#!/usr/bin/env python3
-"""
-GTA stream finder (live + recently ended).
+name: GTA live finder
 
-Looks at a list of Twitch, YouTube and Kick channels and reports GTA streams
-that were live or ended within the last N hours, with a link for each
-(a VOD/replay link for ended streams, the channel link for live ones).
-Results are printed and, optionally, posted to a Discord webhook.
+on:
+  schedule:
+    - cron: "0 */5 * * *"   # every 5 hours (UTC); GitHub may run it a few minutes late
+  workflow_dispatch:         # lets you start it manually from the Actions tab
 
-Usage:
-    python3 gta_live_finder.py --once                   # one check, 6-hour window
-    python3 gta_live_finder.py --once --window-hours 12
-    python3 gta_live_finder.py --once --no-filter       # ignore the GTA filter (testing)
+concurrency:
+  group: gta-live
+  cancel-in-progress: false
 
-Environment variables (platforms without keys are skipped):
-    TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET
-    YOUTUBE_API_KEY
-    KICK_CLIENT_ID, KICK_CLIENT_SECRET
-    DISCORD_WEBHOOK_URL
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
 
-Platform limits:
-    Twitch  - live streams (by category or title) + past broadcasts (by title only,
-              because Twitch does not expose the game for past broadcasts).
-              Needs the streamer to have VODs enabled.
-    YouTube - live streams and ended live streams (by title/description).
-    Kick    - only streams that are live at the moment the script runs
-              (Kick's official API has no replay listing).
-"""
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
-import argparse
-import json
-import os
-import re
-import sys
-import time
-from datetime import datetime, timedelta, timezone
+      - run: pip install requests
 
-import requests
+      # Remembers which streams were already announced so Discord isn't spammed
+      - uses: actions/cache@v5
+        with:
+          path: seen.json
+          key: seen-${{ github.run_id }}
+          restore-keys: seen-
 
-TIMEOUT = 15
-GTA_PATTERN = re.compile(r"\bgta|grand theft auto|vice city", re.IGNORECASE)
-SEEN_FILE = "seen.json"
-SEEN_TTL = 7 * 24 * 3600  # forget announced items after 7 days
-NO_FILTER = False
-DURATION_RE = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?")
-
-
-# --------------------------------------------------------------- helpers ---
-def is_gta(*texts):
-    if NO_FILTER:
-        return True
-    blob = " ".join(t or "" for t in texts)
-    return bool(GTA_PATTERN.search(blob))
-
-
-def parse_iso(value):
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
-def parse_duration(value):
-    """Twitch durations look like '3h12m5s'."""
-    m = DURATION_RE.fullmatch(value or "")
-    if not m:
-        return timedelta(0)
-    h, mi, sec = (int(x or 0) for x in m.groups())
-    return timedelta(hours=h, minutes=mi, seconds=sec)
-
-
-def fmt_duration(td):
-    total = int(td.total_seconds())
-    h, rem = divmod(total, 3600)
-    m = rem // 60
-    return f"{h}h {m:02d}m" if h else f"{m}m"
-
-
-# ----------------------------------------------------------------- Twitch --
-def twitch_headers():
-    cid = os.getenv("TWITCH_CLIENT_ID")
-    secret = os.getenv("TWITCH_CLIENT_SECRET")
-    if not (cid and secret):
-        return None
-    tok = requests.post(
-        "https://id.twitch.tv/oauth2/token",
-        params={
-            "client_id": cid,
-            "client_secret": secret,
-            "grant_type": "client_credentials",
-        },
-        timeout=TIMEOUT,
-    )
-    tok.raise_for_status()
-    return {"Client-Id": cid, "Authorization": f"Bearer {tok.json()['access_token']}"}
-
-
-def check_twitch(logins, window_start):
-    headers = twitch_headers()
-    if not (headers and logins):
-        return []
-
-    results = []
-    live_stream_ids = set()
-
-    # 1) Streams live right now (filtered by category or title)
-    for i in range(0, len(logins), 100):
-        params = [("user_login", n) for n in logins[i : i + 100]] + [("first", 100)]
-        r = requests.get(
-            "https://api.twitch.tv/helix/streams",
-            headers=headers,
-            params=params,
-            timeout=TIMEOUT,
-        )
-        r.raise_for_status()
-        for s in r.json().get("data", []):
-            if s.get("type") != "live":
-                continue
-            live_stream_ids.add(s["id"])
-            if is_gta(s.get("game_name"), s.get("title")):
-                results.append(
-                    {
-                        "platform": "Twitch",
-                        "name": s["user_name"],
-                        "title": s.get("title", ""),
-                        "game": s.get("game_name", ""),
-                        "status": "LIVE",
-                        "started": parse_iso(s.get("started_at")),
-                        "duration": None,
-                        "viewers": s.get("viewer_count", 0),
-                        "url": f"https://twitch.tv/{s['user_login']}",
-                        "key": f"twitch-live:{s['id']}",
-                    }
-                )
-
-    # 2) Past broadcasts (VODs) that ended inside the window
-    users = []
-    for i in range(0, len(logins), 100):
-        params = [("login", n) for n in logins[i : i + 100]]
-        r = requests.get(
+      - name: Run finder
+        env:
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          KICK_CLIENT_ID: ${{ secrets.KICK_CLIENT_ID }}
+          KICK_CLIENT_SECRET: ${{ secrets.KICK_CLIENT_SECRET }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python gta_live_finder.py --once --window-hours 6
