@@ -37,4 +37,4 @@ jobs:
           KICK_CLIENT_ID: ${{ secrets.KICK_CLIENT_ID }}
           KICK_CLIENT_SECRET: ${{ secrets.KICK_CLIENT_SECRET }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python gta_live_finder.py --once
+        run: python gta_live_finder.py --once --no-filter
